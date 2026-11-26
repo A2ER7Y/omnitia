@@ -1,0 +1,203 @@
+use crate::distro::PackageManager;
+use anyhow::{anyhow, Result};
+use std::process::Command;
+use tracing::info;
+
+pub struct MasBox;
+
+impl MasBox {
+    pub fn new() -> Result<Self> {
+        Ok(MasBox)
+    }
+
+    pub fn is_available() -> bool {
+        Command::new("mas")
+            .arg("version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+}
+
+impl PackageManager for MasBox {
+    fn install(&self, package: &str) -> Result<()> {
+        // mas requires app ID, try to install by ID first, then by name
+        let output = if package.chars().all(char::is_numeric) {
+            // Install by App Store ID
+            Command::new("mas").args(["install", package]).output()?
+        } else {
+            // Search for app name and install first result
+            let search_output = Command::new("mas").args(["search", package]).output()?;
+
+            if search_output.status.success() {
+                let stdout = String::from_utf8_lossy(&search_output.stdout);
+                if let Some(first_line) = stdout.lines().next() {
+                    let parts: Vec<&str> = first_line.split_whitespace().collect();
+                    if !parts.is_empty() {
+                        let app_id = parts[0];
+                        Command::new("mas").args(["install", app_id]).output()?
+                    } else {
+                        return Err(anyhow!("No app found for: {}", package));
+                    }
+                } else {
+                    return Err(anyhow!("No app found for: {}", package));
+                }
+            } else {
+                return Err(anyhow!("Search failed for: {}", package));
+            }
+        };
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("mas install failed: {}", stderr))
+        }
+    }
+
+    fn remove(&self, _package: &str) -> Result<()> {
+        // mas doesn't support uninstall directly
+        Err(anyhow!(
+            "mas doesn't support uninstalling apps. Use Finder to delete apps manually."
+        ))
+    }
+
+    fn update(&self, package: Option<&str>) -> Result<()> {
+        let mut args = vec!["upgrade"];
+
+        if let Some(pkg) = package {
+            args.push(pkg);
+        }
+
+        let output = Command::new("mas").args(&args).output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("mas upgrade failed: {}", stderr))
+        }
+    }
+
+    fn search(&self, query: &str) -> Result<Vec<String>> {
+        let output = Command::new("mas").args(["search", query]).output()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let packages: Vec<String> = stdout
+                .lines()
+                .filter_map(|line| {
+                    let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                    if parts.len() >= 2 {
+                        // Format: "ID App Name (Version)"
+                        let app_info = parts[1].trim();
+                        if let Some(name_end) = app_info.find(" (") {
+                            Some(format!("{} - {}", parts[0], &app_info[..name_end]))
+                        } else {
+                            Some(format!("{} - {}", parts[0], app_info))
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            Ok(packages)
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("mas search failed: {}", stderr))
+        }
+    }
+
+    fn list_installed(&self) -> Result<Vec<String>> {
+        let output = Command::new("mas").args(["list"]).output()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let packages: Vec<String> = stdout
+                .lines()
+                .filter_map(|line| {
+                    let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                    if parts.len() >= 2 {
+                        // Format: "ID App Name (Version)"
+                        let app_info = parts[1].trim();
+                        if let Some(name_end) = app_info.find(" (") {
+                            Some(format!("{} - {}", parts[0], &app_info[..name_end]))
+                        } else {
+                            Some(format!("{} - {}", parts[0], app_info))
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            Ok(packages)
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("mas list failed: {}", stderr))
+        }
+    }
+
+    fn get_info(&self, package: &str) -> Result<String> {
+        // mas doesn't have a direct info command, use search
+        let output = Command::new("mas").args(["search", package]).output()?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("mas search failed: {}", stderr))
+        }
+    }
+
+    fn get_installed_version(&self, package: &str) -> Result<Option<String>> {
+        info!("Getting installed version for package '{}'", package);
+
+        let output = Command::new("mas")
+            .args(["list"])
+            .output()
+            .map_err(|e| anyhow!("Failed to execute mas command: {}", e))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+
+            // Parse mas list output: appid appname (version)
+            for line in stdout.lines() {
+                if line.contains(package) {
+                    // Look for version in parentheses at the end
+                    if let Some(version_start) = line.rfind('(') {
+                        if let Some(version_end) = line.rfind(')') {
+                            if version_start < version_end {
+                                let version = line[version_start + 1..version_end].to_string();
+                                info!(
+                                    "✅ Found installed version '{}' for package '{}'",
+                                    version, package
+                                );
+                                return Ok(Some(version));
+                            }
+                        }
+                    }
+                }
+            }
+            info!("ℹ️ Package '{}' not found in mas list", package);
+            Ok(None)
+        } else {
+            info!(
+                "ℹ️ Failed to get mas list or package '{}' not installed",
+                package
+            );
+            Ok(None)
+        }
+    }
+
+    fn needs_privilege(&self) -> bool {
+        false // mas doesn't require admin privileges, but needs Apple ID login
+    }
+
+    fn get_name(&self) -> &'static str {
+        "mas"
+    }
+
+    fn get_priority(&self) -> u8 {
+        60 // Medium priority for macOS systems
+    }
+}
