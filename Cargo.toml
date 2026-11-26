@@ -1,0 +1,124 @@
+[package]
+name = "omnitia"
+version = "1.0.0"
+edition = "2021"
+authors = ["therealcoolnerd <arealcoolcompany@gmail.com>"]
+license = "AGPL-3.0-or-later"
+description = "Universal Cross-Platform Package Manager for Linux, Windows, and macOS. One command to install software anywhere."
+homepage = "https://therealcoolnerd.github.io/omni"
+repository = "https://github.com/therealcoolnerd/omni"
+documentation = "https://therealcoolnerd.github.io/omni/docs/"
+readme = "README.md"
+keywords = ["package-manager", "cross-platform", "cli", "linux", "windows"]
+categories = ["command-line-utilities", "development-tools", "os"]
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+    "assets/logo.svg"
+]
+
+[lints.rust]
+unused_imports = "warn"
+unused_variables = "warn"
+dead_code = "warn"
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+upper_case_acronyms = "allow"
+
+[dependencies]
+# Core serialization - optimized for speed
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+chrono = { version = "0.4", features = ["serde"] }
+
+# GUI dependencies - only when needed
+eframe = { version = "0.31", features = ["default"], optional = true }
+egui_extras = { version = "0.31", features = ["default"], optional = true }
+rfd = { version = "0.15", optional = true }
+
+# Core async runtime - minimal features for faster compile
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "process", "fs", "net"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# CLI and user interaction
+indicatif = "0.17"
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+clap = { version = "4.0", features = ["derive"] }
+
+# Cryptography and security
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+
+# Network and HTTP
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+axum = { version = "0.7", features = ["macros"] }
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
+
+# File handling
+tempfile = "3.0" 
+zip = "4.2"
+tar = "0.4"
+flate2 = "1.0"
+
+# System and utilities
+dirs = "6.0"
+semver = { version = "1.0", features = ["serde"] }
+regex = "1.10"
+url = "2.5"
+libc = "0.2"
+rand = "0.9"
+hostname = "0.3"
+
+# SSH support - only when needed
+russh = { version = "0.53", optional = true }
+russh-keys = { version = "0.44", optional = true }
+
+# Async utilities
+async-trait = "0.1"
+futures = "0.3"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+criterion = { version = "0.6", features = ["html_reports"] }
+tempfile = "3.0"
+tokio-test = "0.4"
+futures = "0.3"
+
+[features]
+default = []
+
+# Optional feature groups
+gui = ["eframe", "egui_extras", "rfd"]
+ssh = ["russh", "russh-keys"]
+
+
+[lib]
+name = "omnitia"
+path = "src/lib.rs"
+
+# Optimization profiles
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+debug = true
+
